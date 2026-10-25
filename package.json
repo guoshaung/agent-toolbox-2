@@ -28,20 +28,32 @@
     "electron": "45.0.0",
     "electron-builder": "26.15.3",
     "esbuild": "0.28.2",
+    "prettier": "3.6.2",
     "typescript": "^5.9.3",
     "vite": "8.3.5"
   },
   "build": {
     "appId": "cn.macpe.agenttoolbox.v2.preview",
     "productName": "Agent Toolbox 2 Preview",
-    "directories": { "output": "release" },
-    "files": ["dist/**/*", "dist-electron/**/*", "assets/**/*", "package.json"],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
     "asar": true,
     "win": {
       "icon": "assets/icon.ico",
-      "target": ["portable"],
+      "target": [
+        "portable"
+      ],
       "artifactName": "Agent-Toolbox-2-Preview-${version}-win-x64.${ext}"
     },
-    "portable": { "requestExecutionLevel": "user" }
+    "portable": {
+      "requestExecutionLevel": "user"
+    }
   }
 }
