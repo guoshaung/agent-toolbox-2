@@ -139,9 +139,27 @@ else {
           contextIsolation: true,
           sandbox: true,
           nodeIntegration: false,
+          webviewTag: true,
         },
       });
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+      window.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+        try {
+          const url = new URL(params.src);
+          if (
+            url.hostname !== '127.0.0.1' ||
+            url.protocol !== 'http:' ||
+            params.partition !== 'persist:dsh-v2'
+          )
+            throw Error('invalid guest');
+          webPreferences.preload = undefined;
+          webPreferences.nodeIntegration = false;
+          webPreferences.contextIsolation = true;
+          webPreferences.sandbox = true;
+        } catch {
+          event.preventDefault();
+        }
+      });
       window.webContents.on('will-navigate', (event) => event.preventDefault());
       window.webContents.on('will-frame-navigate', (event) => {
         if (event.isMainFrame) return;

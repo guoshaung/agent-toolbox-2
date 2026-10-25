@@ -20,14 +20,20 @@ const output = path.join(root, 'work/legacy-bridge/app.asar');
   if (packageInfo.name !== 'agent-toolbox' || packageInfo.version !== '0.46.26')
     throw Error('当前兼容补丁仅验证过旧版 0.46.26。');
   const files = {};
-  for (const name of ['main.js', 'ai-hub.js', 'drawing-sync.js'])
-    files[name] = asar.extractFile(source, path.join('src', 'main', name)).toString();
+  for (const name of ['main.js', 'ai-hub.js', 'drawing-sync.js', 'app.js'])
+    files[name] = asar
+      .extractFile(source, path.join('src', name === 'app.js' ? 'renderer' : 'main', name))
+      .toString();
   const patched = patchLegacy(files);
   for (const [name, sourceText] of Object.entries(patched))
-    new vm.Script(sourceText, { filename: name });
+    if (name === 'app.js') require('esbuild').transformSync(sourceText, { loader: 'js' });
+    else new vm.Script(sourceText, { filename: name });
   if (!fs.existsSync(stage)) asar.extractAll(source, stage);
   for (const [name, sourceText] of Object.entries(patched))
-    fs.writeFileSync(path.join(stage, 'src/main', name), sourceText);
+    fs.writeFileSync(
+      path.join(stage, 'src', name === 'app.js' ? 'renderer' : 'main', name),
+      sourceText,
+    );
   fs.copyFileSync(
     path.join(root, 'compat/legacy-bridge.cjs'),
     path.join(stage, 'src/main/v2-bridge.js'),
@@ -45,8 +51,12 @@ const output = path.join(root, 'work/legacy-bridge/app.asar');
   await asar.createPackageWithOptions(stage, output, {
     unpack: `{${unpacked.map((p) => path.join(stage, p).replace(/\\/g, '/')).join(',')}}`,
   });
-  for (const name of ['main.js', 'ai-hub.js', 'drawing-sync.js'])
-    if (asar.extractFile(output, path.join('src', 'main', name)).toString() !== patched[name])
+  for (const name of ['main.js', 'ai-hub.js', 'drawing-sync.js', 'app.js'])
+    if (
+      asar
+        .extractFile(output, path.join('src', name === 'app.js' ? 'renderer' : 'main', name))
+        .toString() !== patched[name]
+    )
       throw Error('生成档案校验失败');
   for (const p of unpacked)
     if (!asar.statFile(output, p.split('/').join(path.sep)).unpacked)

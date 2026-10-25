@@ -7,8 +7,163 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const AI = new Set(['status', 'start', 'stop', 'refresh', 'test', 'copyKey']);
 const DRAWING = new Set(['status', 'start', 'stop', 'qr']);
+const RESEARCH_SECTIONS = new Set([
+  'portal',
+  'academic',
+  'schools',
+  'literature',
+  'fieldpapers',
+  'ideas',
+  'figureboard',
+  'drafter',
+  'presentation',
+  'library',
+  'innovation',
+  'paper',
+  'papertalk',
+  'zotero',
+  'autoresearch',
+]);
 
-async function startBridge({ directory, ai, drawing, preferences, version, clipboard }) {
+function within(root, candidate) {
+  const base = fs.realpathSync(root);
+  const target = fs.realpathSync(candidate);
+  return target === base || target.startsWith(base + path.sep);
+}
+function skillTarget(file) {
+  const skills = require('./skill-factory');
+  const roots = skills.skillRoots({ homeDir: require('node:os').homedir(), projectDir: '' });
+  if (typeof file !== 'string' || path.basename(file) !== 'SKILL.md') throw Error('Skill 路径无效');
+  if (!roots.some((root) => fs.existsSync(root.path) && within(root.path, file)))
+    throw Error('Skill 不在可用目录内');
+  return file;
+}
+function skillDirectory(id) {
+  const skills = require('./skill-factory');
+  const target = skills
+    .skillRoots({ homeDir: require('node:os').homedir(), projectDir: '' })
+    .find((root) => root.id === id);
+  if (!target) throw Error('Skill 目标目录无效');
+  return target.path;
+}
+async function invokeContainer(directory, action, payload) {
+  const container = require('./container-storage');
+  const shelf = require('./app-shelf');
+  const userData = () => directory;
+  const rel = typeof payload === 'string' ? payload : String(payload?.relPath || '');
+  if (action === 'list') return container.listContainer(userData, rel);
+  if (action === 'mkdir') return container.makeFolder(userData, rel, payload?.name);
+  if (action === 'read') return container.readContainerFile(userData, rel);
+  if (action === 'write') return container.writeContainerFile(userData, rel, payload?.content);
+  if (action === 'organize') return container.organize(userData, rel);
+  if (action === 'applyPlan') return container.moveFiles(userData, rel, payload?.groups);
+  if (action === 'import') {
+    if (!Array.isArray(payload?.sources) || payload.sources.length > 100)
+      throw Error('导入文件数量无效');
+    return container.importIntoContainer(userData, payload.sources, rel);
+  }
+  if (['probe', 'run', 'stopRun', 'runStatus', 'runLog'].includes(action)) {
+    if (action === 'runStatus') {
+      const root = container.containerRoot(userData);
+      return Object.fromEntries(
+        Object.entries(shelf.status()).filter(([item]) => {
+          try {
+            return within(root, item);
+          } catch {
+            return false;
+          }
+        }),
+      );
+    }
+    if (!rel) throw Error('请选择容器中的项目文件夹');
+    const location = await container.listContainer(userData, rel);
+    if (!location.ok || location.relPath !== rel.replace(/\\/g, '/').replace(/\/$/, ''))
+      throw Error('工具目录无效');
+    const target = path.join(location.root, location.relPath);
+    if (action === 'probe') return shelf.probe(target);
+    if (action === 'runLog') return shelf.tail(target).slice(-50000);
+    if (action === 'stopRun') return shelf.stop(target);
+    const info = shelf.probe(target);
+    if (!info.ok || !info.command) throw Error('未识别到启动命令');
+    return shelf.start({ id: target, cwd: target, command: info.command });
+  }
+  throw Error('不支持的容器操作');
+}
+function invokeSkill(action, payload) {
+  const skills = require('./skill-factory');
+  if (action === 'targets')
+    return skills.skillRoots({ homeDir: require('node:os').homedir(), projectDir: '' });
+  if (action === 'list')
+    return skills.listSkills({ homeDir: require('node:os').homedir(), projectDir: '' });
+  if (action === 'read') return { ok: true, content: skills.readSkill(skillTarget(payload)) };
+  if (action === 'write') {
+    if (!payload || typeof payload !== 'object' || typeof payload.content !== 'string')
+      throw Error('Skill 内容无效');
+    if (
+      Object.keys(payload).some(
+        (key) => !['targetId', 'name', 'description', 'content', 'overwrite', 'raw'].includes(key),
+      )
+    )
+      throw Error('Skill 参数无效');
+    const target = skillDirectory(payload.targetId);
+    const name = skills.sanitizeSkillName(payload.name);
+    const proposed = path.join(target, name, 'SKILL.md');
+    if (fs.existsSync(path.dirname(proposed)) && !within(target, path.dirname(proposed)))
+      throw Error('Skill 目标目录无效');
+    if (fs.existsSync(proposed)) skillTarget(proposed);
+    return skills.writeSkill({
+      directory: target,
+      name,
+      description: payload.description,
+      content: payload.content,
+      overwrite: payload.overwrite === true,
+      raw: payload.raw === true,
+    });
+  }
+  throw Error('不支持的 Skill 操作');
+}
+function literatureDirectory(directory) {
+  const target = path.join(directory, 'literature');
+  fs.mkdirSync(target, { recursive: true });
+  return target;
+}
+function literatureFile(directory, name) {
+  if (typeof name !== 'string' || !name || name !== path.basename(name))
+    throw Error('文献名称无效');
+  const file = path.join(literatureDirectory(directory), name);
+  if (!fs.statSync(file).isFile()) throw Error('文献文件不存在');
+  return file;
+}
+async function invokeResearch(directory, action, payload, openResearch) {
+  if (action === 'open' && RESEARCH_SECTIONS.has(payload)) return openResearch(payload);
+  if (action === 'list')
+    return fs
+      .readdirSync(literatureDirectory(directory), { withFileTypes: true })
+      .filter((item) => item.isFile() && !item.name.startsWith('.'))
+      .map((item) => {
+        const stat = fs.statSync(path.join(literatureDirectory(directory), item.name));
+        return { name: item.name, size: stat.size, modifiedAt: stat.mtimeMs };
+      })
+      .sort((a, b) => b.modifiedAt - a.modifiedAt)
+      .slice(0, 1000);
+  if (action === 'openFile') {
+    const result = await require('electron').shell.openPath(literatureFile(directory, payload));
+    return { ok: !result, error: result || '' };
+  }
+  throw Error('不支持的科研操作');
+}
+
+async function startBridge({
+  directory,
+  ai,
+  drawing,
+  dsh,
+  openResearch,
+  openOther,
+  preferences,
+  version,
+  clipboard,
+}) {
   const token = crypto.randomBytes(32).toString('hex');
   const descriptor = path.join(directory, 'v2-bridge.json');
   const server = http.createServer(async (req, res) => {
@@ -33,7 +188,7 @@ async function startBridge({ directory, ai, drawing, preferences, version, clipb
       let size = 0;
       for await (const chunk of req) {
         size += chunk.length;
-        if (size > 16384) throw Error('请求过大');
+        if (size > 600000) throw Error('请求过大');
         chunks.push(chunk);
       }
       const input = JSON.parse(Buffer.concat(chunks).toString());
@@ -41,6 +196,12 @@ async function startBridge({ directory, ai, drawing, preferences, version, clipb
       let result;
       if (scope === 'system' && action === 'status')
         result = { protocol: 1, version, preferences: preferences() };
+      else if (
+        scope === 'system' &&
+        action === 'openTool' &&
+        ['container', 'skills', 'dsh'].includes(payload)
+      )
+        result = openOther(payload);
       else if (scope === 'ai' && AI.has(action)) {
         if (
           ['refresh', 'test'].includes(action) &&
@@ -72,6 +233,18 @@ async function startBridge({ directory, ai, drawing, preferences, version, clipb
         });
       } else if (scope === 'drawing' && DRAWING.has(action))
         result = await drawing(`drawing:${action}`, payload);
+      else if (scope === 'dsh') {
+        if (action === 'status') result = dsh.status();
+        else if (action === 'start') result = await dsh.start();
+        else if (action === 'stop') result = await dsh.stop();
+        else if (action === 'bot') result = { enabled: dsh.botEnabled() };
+        else if (action === 'setBot' && typeof payload === 'boolean')
+          result = await dsh.setBot(payload);
+        else throw Error('不支持的 DSH 操作');
+      } else if (scope === 'container') result = await invokeContainer(directory, action, payload);
+      else if (scope === 'skill') result = invokeSkill(action, payload);
+      else if (scope === 'research')
+        result = await invokeResearch(directory, action, payload, openResearch);
       else if (scope === 'system' && action === 'copyText') {
         if (typeof payload !== 'string' || payload.length > 12000) throw Error('复制内容过长');
         clipboard.writeText(payload);

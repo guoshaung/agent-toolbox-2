@@ -21,6 +21,9 @@ async function fixture(t) {
   ];
   let saved,
     rotated = false;
+  const opened = [];
+  let dshRunning = false;
+  let bot = false;
   const bridge = await startBridge({
     directory,
     version: 'test',
@@ -36,6 +39,26 @@ async function fixture(t) {
       return {};
     },
     drawing: async () => ({ enabled: true, sequence: 33, identity: { code: '1234' } }),
+    dsh: {
+      status: () => ({ status: dshRunning ? 'running' : 'idle' }),
+      start: async () => {
+        dshRunning = true;
+        return { status: 'running' };
+      },
+      stop: async () => {
+        dshRunning = false;
+        return { status: 'idle' };
+      },
+      botEnabled: () => bot,
+      setBot: async (value) => {
+        bot = value;
+        return { botEnabled: bot };
+      },
+    },
+    openResearch: (section) => {
+      opened.push(section);
+      return { ok: true };
+    },
   });
   t.after(async () => {
     bridge.close();
@@ -52,7 +75,16 @@ async function fixture(t) {
       },
       body: JSON.stringify(body),
     });
-  return { directory, bridge, descriptor, request, saved: () => saved, rotated: () => rotated };
+  return {
+    directory,
+    bridge,
+    descriptor,
+    request,
+    saved: () => saved,
+    rotated: () => rotated,
+    opened,
+    bot: () => bot,
+  };
 }
 test('bridge requires authentication and rejects browser origins', async (t) => {
   const f = await fixture(t);
@@ -142,4 +174,27 @@ test('bridge reads original identity and preferences; close removes descriptor',
   );
   f.bridge.close();
   await assert.rejects(fs.access(path.join(f.directory, 'v2-bridge.json')));
+});
+test('DSH state and known research pages are reachable; arbitrary legacy actions are rejected', async (t) => {
+  const f = await fixture(t);
+  assert.equal(
+    (await (await f.request({ scope: 'dsh', action: 'start' })).json()).status,
+    'running',
+  );
+  assert.equal(
+    (await (await f.request({ scope: 'dsh', action: 'setBot', payload: true })).json()).botEnabled,
+    true,
+  );
+  assert.equal(f.bot(), true);
+  assert.equal(
+    (await f.request({ scope: 'research', action: 'open', payload: 'zotero' })).status,
+    200,
+  );
+  assert.deepEqual(f.opened, ['zotero']);
+  assert.equal(
+    (await f.request({ scope: 'research', action: 'open', payload: 'settings' })).status,
+    400,
+  );
+  assert.equal((await f.request({ scope: 'dsh', action: 'setBot', payload: 'true' })).status, 400);
+  assert.equal((await f.request({ scope: 'skill', action: 'resetAll' })).status, 400);
 });

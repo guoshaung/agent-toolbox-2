@@ -69,7 +69,7 @@ export interface DesktopBridge {
   version(): Promise<string>;
   legacy<T>(scope: LegacyScope, action: LegacyAction, payload?: unknown): Promise<T>;
 }
-export type LegacyScope = 'system' | 'ai' | 'drawing';
+export type LegacyScope = 'system' | 'ai' | 'drawing' | 'research' | 'dsh' | 'container' | 'skill';
 export type LegacyAction =
   | 'status'
   | 'connect'
@@ -80,7 +80,25 @@ export type LegacyAction =
   | 'test'
   | 'update'
   | 'copyKey'
-  | 'qr';
+  | 'qr'
+  | 'open'
+  | 'openFile'
+  | 'openTool'
+  | 'list'
+  | 'read'
+  | 'write'
+  | 'targets'
+  | 'mkdir'
+  | 'organize'
+  | 'applyPlan'
+  | 'pickImport'
+  | 'probe'
+  | 'run'
+  | 'stopRun'
+  | 'runStatus'
+  | 'runLog'
+  | 'bot'
+  | 'setBot';
 export interface LegacyStatus {
   connected: boolean;
   protocol: number;

@@ -18,7 +18,14 @@ import {
 } from 'lucide-react';
 import type { Channel, DrawingStatus, HubStatus, LegacyStatus, Quota } from '../shared/types';
 
-export type Module = 'research' | 'ai' | 'drawing';
+export type Module =
+  | 'research'
+  | 'research-suite'
+  | 'ai'
+  | 'drawing'
+  | 'dsh'
+  | 'container'
+  | 'skills';
 const stamp = (value?: string) =>
   value && !Number.isNaN(Date.parse(value)) ? new Date(value).toLocaleString() : '时间未提供';
 const count = (value: number) => value.toLocaleString();

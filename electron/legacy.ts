@@ -1,13 +1,30 @@
-import { app, clipboard } from 'electron';
+import { app, clipboard, dialog } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type { LegacyScope, LegacyAction } from '../shared/types';
 
 const allowed: Record<LegacyScope, Set<string>> = {
-  system: new Set(['status', 'connect', 'copyText']),
+  system: new Set(['status', 'connect', 'copyText', 'openTool']),
   ai: new Set(['status', 'start', 'stop', 'refresh', 'test', 'update', 'copyKey']),
   drawing: new Set(['status', 'start', 'stop', 'qr']),
+  research: new Set(['list', 'open', 'openFile']),
+  dsh: new Set(['status', 'start', 'stop', 'bot', 'setBot']),
+  container: new Set([
+    'list',
+    'mkdir',
+    'read',
+    'write',
+    'organize',
+    'applyPlan',
+    'pickImport',
+    'probe',
+    'run',
+    'stopRun',
+    'runStatus',
+    'runLog',
+  ]),
+  skill: new Set(['targets', 'list', 'read', 'write']),
 };
 function directory() {
   // Tests must never read the real account/pairing directory.
@@ -48,7 +65,15 @@ async function invoke(scope: string, action: string, payload?: unknown) {
     method: 'POST',
     headers: { Authorization: `Bearer ${descriptor.token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ scope, action, payload }),
-    signal: AbortSignal.timeout(action === 'test' ? 130000 : action === 'status' ? 4000 : 30000),
+    signal: AbortSignal.timeout(
+      action === 'test' || action === 'pickImport'
+        ? 130000
+        : scope === 'dsh' && action !== 'status'
+          ? 70000
+          : action === 'status'
+            ? 4000
+            : 30000,
+    ),
   });
   const value = await response.json();
   if (!response.ok || value.ok === false) throw Error(value.error || '旧版服务操作失败');
@@ -97,7 +122,22 @@ async function connect() {
 export async function legacyRequest(scope: LegacyScope, action: LegacyAction, payload?: unknown) {
   if (!Object.hasOwn(allowed, scope) || !allowed[scope].has(action))
     throw Error('不支持的迁移操作');
-  if (JSON.stringify(payload ?? null).length > 14000) throw Error('操作内容过长');
+  if (
+    JSON.stringify(payload ?? null).length >
+    (scope === 'skill' && action === 'write' ? 550000 : 14000)
+  )
+    throw Error('操作内容过长');
+  if (scope === 'container' && action === 'pickImport') {
+    const picked = await dialog.showOpenDialog({
+      title: '选择要放入容器的文件',
+      properties: ['openFile', 'multiSelections'],
+    });
+    if (picked.canceled || !picked.filePaths.length) return { ok: true, cancelled: true };
+    return invoke('container', 'import', {
+      relPath: typeof payload === 'string' ? payload : '',
+      sources: picked.filePaths,
+    });
+  }
   if (scope === 'system' && action === 'status') {
     const preferences = await legacyPreferences();
     try {

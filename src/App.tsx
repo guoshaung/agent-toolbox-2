@@ -10,6 +10,9 @@ import {
   CircleHelp,
   Command,
   Download,
+  Boxes,
+  Puzzle,
+  FlaskConical,
   Folder,
   FolderPlus,
   GitBranch,
@@ -43,6 +46,7 @@ import type {
   LegacyStatus,
 } from '../shared/types';
 import { LegacyPage, type Module } from './LegacyPage';
+import { MigratedPage } from './MigratedPage';
 import { Detail } from './Detail';
 import { Graph } from './Graph';
 import { emptyAnnotation, heat, linksFor, readingList, statusLabels } from './model';
@@ -401,6 +405,35 @@ export function App() {
                 <span>绘图同步</span>
                 {page === 'drawing' && <span className="nav-dot" />}
               </button>
+              <button
+                className={page === 'research-suite' ? 'active' : ''}
+                onClick={() => setPage('research-suite')}
+              >
+                <FlaskConical size={18} />
+                <span>完整科研工具</span>
+                {page === 'research-suite' && <span className="nav-dot" />}
+              </button>
+              <button className={page === 'dsh' ? 'active' : ''} onClick={() => setPage('dsh')}>
+                <Command size={18} />
+                <span>DSH 控制台</span>
+                {page === 'dsh' && <span className="nav-dot" />}
+              </button>
+              <button
+                className={page === 'container' ? 'active' : ''}
+                onClick={() => setPage('container')}
+              >
+                <Boxes size={18} />
+                <span>容器</span>
+                {page === 'container' && <span className="nav-dot" />}
+              </button>
+              <button
+                className={page === 'skills' ? 'active' : ''}
+                onClick={() => setPage('skills')}
+              >
+                <Puzzle size={18} />
+                <span>Skill 管理</span>
+                {page === 'skills' && <span className="nav-dot" />}
+              </button>
             </nav>
             <div className="nav-section-label library-label">
               <span>我的资料库</span>
@@ -441,7 +474,7 @@ export function App() {
                 <span className="avatar">G</span>
                 <div>
                   <strong>我的研究空间</strong>
-                  <span>Toolbox 2 · v0.2.0</span>
+                  <span>Toolbox 2 · v0.3.0</span>
                 </div>
                 <CircleHelp size={16} />
               </button>
@@ -464,7 +497,19 @@ export function App() {
               <span>{page === 'research' ? '科研工作台' : '我的工具箱'}</span>
               <ChevronRight size={13} />
               <strong>
-                {page === 'research' ? library.name : page === 'ai' ? '额度中枢' : '绘图同步'}
+                {page === 'research'
+                  ? library.name
+                  : page === 'ai'
+                    ? '额度中枢'
+                    : page === 'drawing'
+                      ? '绘图同步'
+                      : page === 'research-suite'
+                        ? '科研工具'
+                        : page === 'dsh'
+                          ? 'DSH 控制台'
+                          : page === 'container'
+                            ? '容器'
+                            : 'Skill 管理'}
               </strong>
             </div>
             <div className="workspace-header-actions">
@@ -492,7 +537,15 @@ export function App() {
               </button>
             </div>
           </header>
-          {page !== 'research' ? (
+          {page !== 'research' && page !== 'ai' && page !== 'drawing' ? (
+            <MigratedPage
+              key={page}
+              kind={page}
+              legacy={legacy}
+              onConnect={connectLegacy}
+              notify={notify}
+            />
+          ) : page !== 'research' ? (
             <LegacyPage
               key={page}
               kind={page}

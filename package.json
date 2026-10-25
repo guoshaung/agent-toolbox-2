@@ -1,9 +1,9 @@
 {
   "name": "agent-toolbox-2",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Agent Toolbox 2 — a research workspace preview",
+  "description": "Agent Toolbox 2 — research and personal tools preview",
   "author": "guoshaung",
   "license": "MIT",
   "main": "dist-electron/main.cjs",
