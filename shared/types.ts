@@ -67,6 +67,83 @@ export interface DesktopBridge {
   openExternal(url: string): Promise<void>;
   exportList(content: string, name: string): Promise<boolean>;
   version(): Promise<string>;
+  legacy<T>(scope: LegacyScope, action: LegacyAction, payload?: unknown): Promise<T>;
+}
+export type LegacyScope = 'system' | 'ai' | 'drawing';
+export type LegacyAction =
+  | 'status'
+  | 'connect'
+  | 'copyText'
+  | 'start'
+  | 'stop'
+  | 'refresh'
+  | 'test'
+  | 'update'
+  | 'copyKey'
+  | 'qr';
+export interface LegacyStatus {
+  connected: boolean;
+  protocol: number;
+  version?: string;
+  preferences: { typography: string; scale: string };
+  message?: string;
+}
+export interface Quota {
+  remaining?: number;
+  unit?: string;
+  plan?: string;
+  source: string;
+  updatedAt: string;
+  resetAt?: string;
+  windows?: {
+    label: string;
+    usedPercent?: number;
+    lessThanOnePercent?: boolean;
+    resetAt?: string;
+    usedText?: string;
+    totalText?: string;
+  }[];
+  pools?: { name: string; remaining: number }[];
+}
+export interface Channel {
+  id: string;
+  name: string;
+  source: string;
+  provider: string;
+  model: string;
+  models?: string[];
+  enabled: boolean;
+  priority: number;
+  ready: boolean;
+  hasKey: boolean;
+  cooldownUntil: number;
+  accountNote?: string;
+  quota: Quota | null;
+  quotaPath?: string;
+  stats: {
+    completed: number;
+    failures: number;
+    inputTokens: number;
+    outputTokens: number;
+    usageResponses: number;
+  };
+}
+export interface HubStatus {
+  running: boolean;
+  baseUrl: string;
+  inflight: number;
+  channels: Channel[];
+  requests: { id?: string; at: string; channel: string; result: string; elapsedMs: number }[];
+}
+export interface DrawingStatus {
+  enabled: boolean;
+  identity: { id: string; code: string; name: string };
+  clients: number;
+  remoteClients: number;
+  sequence: number;
+  desktopUrl: string;
+  urls: string[];
+  qr?: string;
 }
 declare global {
   interface Window {

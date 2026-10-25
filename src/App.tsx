@@ -40,12 +40,16 @@ import type {
   Preferences,
   SearchResult,
   Workspace,
+  LegacyStatus,
 } from '../shared/types';
+import { LegacyPage, type Module } from './LegacyPage';
 import { Detail } from './Detail';
 import { Graph } from './Graph';
 import { emptyAnnotation, heat, linksFor, readingList, statusLabels } from './model';
 
 export function App() {
+  const [page, setPage] = useState<Module>('research');
+  const [legacy, setLegacy] = useState<LegacyStatus | null>(null);
   const [workspace, setWorkspace] = useState<Workspace | null>(null),
     [fatal, setFatal] = useState('');
   const [selectedId, setSelectedId] = useState(''),
@@ -76,6 +80,32 @@ export function App() {
         ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, '')
         : String(error),
     );
+  useEffect(() => {
+    let active = true;
+    const refresh = () =>
+      window.toolbox2
+        ?.legacy<LegacyStatus>('system', 'status')
+        .then((value) => {
+          if (!active) return;
+          setLegacy(value);
+          document.documentElement.dataset.typography = value.preferences.typography;
+          document.documentElement.dataset.legacyScale = value.preferences.scale;
+        })
+        .catch(() => {});
+    void refresh();
+    const timer = setInterval(() => void refresh(), 6000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, []);
+  async function connectLegacy() {
+    try {
+      setLegacy(await window.toolbox2.legacy<LegacyStatus>('system', 'connect'));
+    } catch (e) {
+      notify(e);
+    }
+  }
   useEffect(() => {
     if (!window.toolbox2) {
       setFatal('请通过 Toolbox 2 桌面预览程序打开这个工作区。');
@@ -339,6 +369,7 @@ export function App() {
             <button
               className="quick-search"
               onClick={() => {
+                setPage('research');
                 searchRef.current?.focus();
                 searchRef.current?.select();
               }}
@@ -349,20 +380,26 @@ export function App() {
             </button>
             <div className="nav-section-label">工作空间</div>
             <nav className="primary-nav">
-              <button className="active">
+              <button
+                className={page === 'research' ? 'active' : ''}
+                onClick={() => setPage('research')}
+              >
                 <BookOpen size={18} />
                 <span>科研工作台</span>
-                <span className="nav-dot" />
+                {page === 'research' && <span className="nav-dot" />}
               </button>
-              <button disabled title="后续版本接入">
+              <button className={page === 'ai' ? 'active' : ''} onClick={() => setPage('ai')}>
                 <Zap size={18} />
                 <span>额度中枢</span>
-                <small>规划中</small>
+                {page === 'ai' && <span className="nav-dot" />}
               </button>
-              <button disabled title="后续版本接入">
+              <button
+                className={page === 'drawing' ? 'active' : ''}
+                onClick={() => setPage('drawing')}
+              >
                 <PenTool size={18} />
                 <span>绘图同步</span>
-                <small>规划中</small>
+                {page === 'drawing' && <span className="nav-dot" />}
               </button>
             </nav>
             <div className="nav-section-label library-label">
@@ -377,7 +414,10 @@ export function App() {
                   disabled={searching}
                   key={l.id}
                   className={l.id === library.id ? 'selected' : ''}
-                  onClick={() => void savePreferences({ activeLibrary: l.id }).catch(notify)}
+                  onClick={() => {
+                    setPage('research');
+                    void savePreferences({ activeLibrary: l.id }).catch(notify);
+                  }}
                 >
                   <Folder size={16} color={l.color} />
                   <span>{l.name}</span>
@@ -401,7 +441,7 @@ export function App() {
                 <span className="avatar">G</span>
                 <div>
                   <strong>我的研究空间</strong>
-                  <span>Toolbox 2 · v0.1.0</span>
+                  <span>Toolbox 2 · v0.2.0</span>
                 </div>
                 <CircleHelp size={16} />
               </button>
@@ -421,14 +461,20 @@ export function App() {
                 </button>
               )}
               <LibraryIcon size={16} />
-              <span>科研工作台</span>
+              <span>{page === 'research' ? '科研工作台' : '我的工具箱'}</span>
               <ChevronRight size={13} />
-              <strong>{library.name}</strong>
+              <strong>
+                {page === 'research' ? library.name : page === 'ai' ? '额度中枢' : '绘图同步'}
+              </strong>
             </div>
             <div className="workspace-header-actions">
               <span className="local-badge">
                 <span className="live-dot" />
-                本地已连接
+                {page === 'research'
+                  ? '本地已连接'
+                  : legacy?.connected
+                    ? '原服务已连接'
+                    : '等待服务连接'}
               </span>
               <button
                 className="icon-button"
@@ -446,348 +492,373 @@ export function App() {
               </button>
             </div>
           </header>
-          <div className="workspace-tabbar">
-            <div className="workspace-tab">
-              <GitBranch size={15} />
-              <span>领域论文</span>
-              <span className="tab-count">{library.papers.length}</span>
-            </div>
-            <span className="tab-trailing">RESEARCH WORKSPACE</span>
-          </div>
-          <div className="research-heading">
-            <div>
-              <div className="eyebrow">
-                <span />
-                LITERATURE ATLAS
-              </div>
-              <h1>{library.name}</h1>
-              <p>连接前沿论文与基础工作，建立自己的阅读路径。</p>
-            </div>
-            <div className="heading-actions">
-              <span className={`source-badge ${library.demo ? 'demo' : ''}`}>
-                {library.demo
-                  ? '示例文献'
-                  : library.updatedAt
-                    ? 'OpenAlex · 联网题录'
-                    : '等待首次检索'}
-              </span>
-              <button
-                className="button"
-                onClick={() =>
-                  void window.toolbox2
-                    .exportList(readingList(library, workspace.annotations), library.name)
-                    .then((ok) => {
-                      if (ok) notify('阅读清单已导出');
-                    })
-                    .catch(notify)
-                }
-                disabled={!library.papers.length}
-              >
-                <Download size={15} />
-                导出清单
-              </button>
-            </div>
-          </div>
-          <form
-            className="research-search"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void search();
-            }}
-          >
-            <Search size={19} />
-            <input
-              ref={searchRef}
-              aria-label="研究领域或交叉主题"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="输入领域或交叉主题，例如：graph learning for scientific discovery"
+          {page !== 'research' ? (
+            <LegacyPage
+              key={page}
+              kind={page}
+              legacy={legacy}
+              onConnect={connectLegacy}
+              onDisconnected={() => setLegacy((v) => (v ? { ...v, connected: false } : v))}
+              notify={notify}
             />
-            <span className="search-source">
-              OpenAlex
-              <ChevronDown size={12} />
-            </span>
-            <button className="button primary" disabled={searching}>
-              {searching ? <LoaderCircle size={15} className="spin" /> : <Sparkles size={15} />}
-              <span>{searching ? '正在检索…' : '检索论文'}</span>
-            </button>
-          </form>
-          <div className="research-stats">
-            <span>
-              <strong>{library.papers.length}</strong>篇文献
-            </span>
-            <i />
-            <span>
-              <strong>{reading}</strong>篇阅读中
-            </span>
-            <i />
-            <span>
-              <strong>{completed}</strong>篇已读
-            </span>
-            <i />
-            <span>
-              <strong>{visits}</strong>次访问
-            </span>
-            <span className="stats-update">
-              {library.demo
-                ? '示例集用于体验；点击检索获取最新文献'
-                : library.updatedAt
-                  ? `更新于 ${new Date(library.updatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}`
-                  : '支持单领域与交叉领域检索'}
-            </span>
-          </div>
-          <div className="workspace-content">
-            <main className="paper-main">
-              <div className="paper-toolbar">
-                <div className="view-segment" role="group" aria-label="论文视图">
-                  <button
-                    className={preferences.view === 'table' ? 'active' : ''}
-                    onClick={() => void savePreferences({ view: 'table' }).catch(notify)}
-                  >
-                    <Table2 size={15} />
-                    表格
-                  </button>
-                  <button
-                    className={preferences.view === 'graph' ? 'active' : ''}
-                    onClick={() => void savePreferences({ view: 'graph' }).catch(notify)}
-                  >
-                    <Network size={15} />
-                    关系图谱
-                  </button>
+          ) : (
+            <>
+              <div className="workspace-tabbar">
+                <div className="workspace-tab">
+                  <GitBranch size={15} />
+                  <span>领域论文</span>
+                  <span className="tab-count">{library.papers.length}</span>
                 </div>
-                <div className="toolbar-space" />
-                <div className="sort-control">
-                  <ArrowDownWideNarrow size={14} />
-                  <select
-                    aria-label="论文排序"
-                    value={sort}
-                    onChange={(e) => setSort(e.target.value)}
-                  >
-                    <option value="frontier">最新发表优先</option>
-                    <option value="cited">引用次数优先</option>
-                    <option value="visits">访问次数优先</option>
-                  </select>
-                </div>
-                <button
-                  className="icon-button"
-                  title={preferences.detailOpen ? '收起详情' : '展开详情'}
-                  onClick={() =>
-                    void savePreferences({ detailOpen: !preferences.detailOpen }).catch(notify)
-                  }
-                >
-                  {preferences.detailOpen ? (
-                    <PanelRightClose size={17} />
-                  ) : (
-                    <PanelRightOpen size={17} />
-                  )}
-                </button>
+                <span className="tab-trailing">RESEARCH WORKSPACE</span>
               </div>
-              <div className="filter-toolbar">
-                <div className="filter-tabs">
-                  {[
-                    ['all', '全部'],
-                    ['unread', '未读'],
-                    ['reading', '阅读中'],
-                    ['pinned', '已收藏'],
-                  ].map(([id, label]) => (
-                    <button
-                      key={id}
-                      className={filter === id ? 'active' : ''}
-                      onClick={() => setFilter(id)}
-                    >
-                      {id === 'pinned' && <Bookmark size={12} />} {label}
-                      {id === 'all' && <small>{library.papers.length}</small>}
-                    </button>
-                  ))}
-                </div>
-                <div className="filter-input">
-                  <Search size={13} />
-                  <input
-                    ref={filterRef}
-                    aria-label="筛选当前文献"
-                    placeholder="筛选标题、作者…"
-                    value={textFilter}
-                    onChange={(e) => setTextFilter(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className={`papers-area ${searching ? 'is-searching' : ''}`}>
-                {searching && (
-                  <div className="search-progress">
-                    <LoaderCircle className="spin" size={15} />
-                    正在查找相关论文，原有文献会保留到检索完成
+              <div className="research-heading">
+                <div>
+                  <div className="eyebrow">
+                    <span />
+                    LITERATURE ATLAS
                   </div>
-                )}
-                {!papers.length ? (
-                  <div className="empty-state">
-                    <div className="empty-art">
-                      <BookOpen size={32} />
-                      <span>
-                        <Plus size={13} />
-                      </span>
+                  <h1>{library.name}</h1>
+                  <p>连接前沿论文与基础工作，建立自己的阅读路径。</p>
+                </div>
+                <div className="heading-actions">
+                  <span className={`source-badge ${library.demo ? 'demo' : ''}`}>
+                    {library.demo
+                      ? '示例文献'
+                      : library.updatedAt
+                        ? 'OpenAlex · 联网题录'
+                        : '等待首次检索'}
+                  </span>
+                  <button
+                    className="button"
+                    onClick={() =>
+                      void window.toolbox2
+                        .exportList(readingList(library, workspace.annotations), library.name)
+                        .then((ok) => {
+                          if (ok) notify('阅读清单已导出');
+                        })
+                        .catch(notify)
+                    }
+                    disabled={!library.papers.length}
+                  >
+                    <Download size={15} />
+                    导出清单
+                  </button>
+                </div>
+              </div>
+              <form
+                className="research-search"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void search();
+                }}
+              >
+                <Search size={19} />
+                <input
+                  ref={searchRef}
+                  aria-label="研究领域或交叉主题"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="输入领域或交叉主题，例如：graph learning for scientific discovery"
+                />
+                <span className="search-source">
+                  OpenAlex
+                  <ChevronDown size={12} />
+                </span>
+                <button className="button primary" disabled={searching}>
+                  {searching ? <LoaderCircle size={15} className="spin" /> : <Sparkles size={15} />}
+                  <span>{searching ? '正在检索…' : '检索论文'}</span>
+                </button>
+              </form>
+              <div className="research-stats">
+                <span>
+                  <strong>{library.papers.length}</strong>篇文献
+                </span>
+                <i />
+                <span>
+                  <strong>{reading}</strong>篇阅读中
+                </span>
+                <i />
+                <span>
+                  <strong>{completed}</strong>篇已读
+                </span>
+                <i />
+                <span>
+                  <strong>{visits}</strong>次访问
+                </span>
+                <span className="stats-update">
+                  {library.demo
+                    ? '示例集用于体验；点击检索获取最新文献'
+                    : library.updatedAt
+                      ? `更新于 ${new Date(library.updatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+                      : '支持单领域与交叉领域检索'}
+                </span>
+              </div>
+              <div className="workspace-content">
+                <main className="paper-main">
+                  <div className="paper-toolbar">
+                    <div className="view-segment" role="group" aria-label="论文视图">
+                      <button
+                        className={preferences.view === 'table' ? 'active' : ''}
+                        onClick={() => void savePreferences({ view: 'table' }).catch(notify)}
+                      >
+                        <Table2 size={15} />
+                        表格
+                      </button>
+                      <button
+                        className={preferences.view === 'graph' ? 'active' : ''}
+                        onClick={() => void savePreferences({ view: 'graph' }).catch(notify)}
+                      >
+                        <Network size={15} />
+                        关系图谱
+                      </button>
                     </div>
-                    <h2>{library.papers.length ? '没有符合条件的文献' : '从一个研究问题开始'}</h2>
-                    <p>
-                      {library.papers.length
-                        ? '试着切换筛选条件，或调整关键词。'
-                        : '输入学科、研究问题或交叉方向，建立第一份领域文献清单。'}
-                    </p>
+                    <div className="toolbar-space" />
+                    <div className="sort-control">
+                      <ArrowDownWideNarrow size={14} />
+                      <select
+                        aria-label="论文排序"
+                        value={sort}
+                        onChange={(e) => setSort(e.target.value)}
+                      >
+                        <option value="frontier">最新发表优先</option>
+                        <option value="cited">引用次数优先</option>
+                        <option value="visits">访问次数优先</option>
+                      </select>
+                    </div>
                     <button
-                      className="button"
-                      onClick={() => {
-                        if (library.papers.length) {
-                          setFilter('all');
-                          setTextFilter('');
-                        } else {
-                          searchRef.current?.focus();
-                          searchRef.current?.select();
+                      className="icon-button"
+                      title={preferences.detailOpen ? '收起详情' : '展开详情'}
+                      onClick={() =>
+                        void savePreferences({ detailOpen: !preferences.detailOpen }).catch(notify)
+                      }
+                    >
+                      {preferences.detailOpen ? (
+                        <PanelRightClose size={17} />
+                      ) : (
+                        <PanelRightOpen size={17} />
+                      )}
+                    </button>
+                  </div>
+                  <div className="filter-toolbar">
+                    <div className="filter-tabs">
+                      {[
+                        ['all', '全部'],
+                        ['unread', '未读'],
+                        ['reading', '阅读中'],
+                        ['pinned', '已收藏'],
+                      ].map(([id, label]) => (
+                        <button
+                          key={id}
+                          className={filter === id ? 'active' : ''}
+                          onClick={() => setFilter(id)}
+                        >
+                          {id === 'pinned' && <Bookmark size={12} />} {label}
+                          {id === 'all' && <small>{library.papers.length}</small>}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="filter-input">
+                      <Search size={13} />
+                      <input
+                        ref={filterRef}
+                        aria-label="筛选当前文献"
+                        placeholder="筛选标题、作者…"
+                        value={textFilter}
+                        onChange={(e) => setTextFilter(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className={`papers-area ${searching ? 'is-searching' : ''}`}>
+                    {searching && (
+                      <div className="search-progress">
+                        <LoaderCircle className="spin" size={15} />
+                        正在查找相关论文，原有文献会保留到检索完成
+                      </div>
+                    )}
+                    {!papers.length ? (
+                      <div className="empty-state">
+                        <div className="empty-art">
+                          <BookOpen size={32} />
+                          <span>
+                            <Plus size={13} />
+                          </span>
+                        </div>
+                        <h2>
+                          {library.papers.length ? '没有符合条件的文献' : '从一个研究问题开始'}
+                        </h2>
+                        <p>
+                          {library.papers.length
+                            ? '试着切换筛选条件，或调整关键词。'
+                            : '输入学科、研究问题或交叉方向，建立第一份领域文献清单。'}
+                        </p>
+                        <button
+                          className="button"
+                          onClick={() => {
+                            if (library.papers.length) {
+                              setFilter('all');
+                              setTextFilter('');
+                            } else {
+                              searchRef.current?.focus();
+                              searchRef.current?.select();
+                            }
+                          }}
+                        >
+                          {library.papers.length ? '清除筛选' : '输入研究主题'}
+                          <ArrowRight size={15} />
+                        </button>
+                      </div>
+                    ) : preferences.view === 'graph' ? (
+                      <Graph
+                        papers={papers}
+                        annotations={workspace.annotations}
+                        selected={selected?.id || ''}
+                        onSelect={selectPaper}
+                      />
+                    ) : (
+                      <div className="table-scroll">
+                        <table className="paper-table">
+                          <colgroup>
+                            <col className="rank-col" />
+                            <col />
+                            <col className="year-col" />
+                            <col className="status-col" />
+                            <col className="heat-col" />
+                          </colgroup>
+                          <thead>
+                            <tr>
+                              <th>#</th>
+                              <th>论文 / 来源</th>
+                              <th>年份</th>
+                              <th>状态</th>
+                              <th>访问热度</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {papers.map((p, i) => {
+                              const a = annotation(p.id);
+                              return (
+                                <tr
+                                  key={p.id}
+                                  className={selected?.id === p.id ? 'selected' : ''}
+                                  tabIndex={0}
+                                  aria-label={`查看 ${p.title}`}
+                                  onClick={() => selectPaper(p)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') selectPaper(p);
+                                  }}
+                                >
+                                  <td className="rank-cell">{String(i + 1).padStart(2, '0')}</td>
+                                  <td>
+                                    <div className="table-title">
+                                      {a.pinned && (
+                                        <Bookmark
+                                          size={12}
+                                          className="pin-icon"
+                                          fill="currentColor"
+                                        />
+                                      )}
+                                      {p.title}
+                                    </div>
+                                    <div className="table-subtitle">
+                                      <span>{p.venue}</span>
+                                      <i />
+                                      {p.authors[0] || '作者未知'}
+                                      {p.authors.length > 1 ? ' et al.' : ''}
+                                      {p.openAccess && <small>OA</small>}
+                                    </div>
+                                  </td>
+                                  <td className="year-cell">
+                                    {p.year || '—'}
+                                    {i === 0 && sort === 'frontier' && (
+                                      <span className="newest-label">最新</span>
+                                    )}
+                                  </td>
+                                  <td>
+                                    <span className={`status-pill ${a.status}`}>
+                                      <span />
+                                      {statusLabels[a.status]}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    <span className="heat-value">
+                                      <i
+                                        style={{
+                                          background: heat(a.visits),
+                                          boxShadow: `0 0 0 3px color-mix(in srgb, ${heat(a.visits)} 12%, transparent)`,
+                                        }}
+                                      />
+                                      {a.visits}
+                                      <small>次</small>
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                  <footer className="paper-footer">
+                    <span>
+                      显示 {papers.length} / {library.papers.length} 篇
+                    </span>
+                    <div className="heat-legend">
+                      <span>访问热度</span>
+                      <i />少<span>→</span>多
+                    </div>
+                  </footer>
+                </main>
+                {showDetail && (
+                  <>
+                    <div
+                      className="panel-resizer"
+                      role="separator"
+                      aria-label="调整详情面板宽度"
+                      aria-orientation="vertical"
+                      aria-valuenow={detailWidth}
+                      tabIndex={0}
+                      onPointerDown={(e) => {
+                        resize.current = { x: e.clientX, width: detailWidth };
+                        document.body.classList.add('resizing');
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                          e.preventDefault();
+                          void savePreferences({
+                            detailWidth: detailWidth + (e.key === 'ArrowLeft' ? 20 : -20),
+                          }).catch(notify);
                         }
                       }}
-                    >
-                      {library.papers.length ? '清除筛选' : '输入研究主题'}
-                      <ArrowRight size={15} />
-                    </button>
-                  </div>
-                ) : preferences.view === 'graph' ? (
-                  <Graph
-                    papers={papers}
-                    annotations={workspace.annotations}
-                    selected={selected?.id || ''}
-                    onSelect={selectPaper}
-                  />
-                ) : (
-                  <div className="table-scroll">
-                    <table className="paper-table">
-                      <colgroup>
-                        <col className="rank-col" />
-                        <col />
-                        <col className="year-col" />
-                        <col className="status-col" />
-                        <col className="heat-col" />
-                      </colgroup>
-                      <thead>
-                        <tr>
-                          <th>#</th>
-                          <th>论文 / 来源</th>
-                          <th>年份</th>
-                          <th>状态</th>
-                          <th>访问热度</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {papers.map((p, i) => {
-                          const a = annotation(p.id);
-                          return (
-                            <tr
-                              key={p.id}
-                              className={selected?.id === p.id ? 'selected' : ''}
-                              tabIndex={0}
-                              aria-label={`查看 ${p.title}`}
-                              onClick={() => selectPaper(p)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') selectPaper(p);
-                              }}
-                            >
-                              <td className="rank-cell">{String(i + 1).padStart(2, '0')}</td>
-                              <td>
-                                <div className="table-title">
-                                  {a.pinned && (
-                                    <Bookmark size={12} className="pin-icon" fill="currentColor" />
-                                  )}
-                                  {p.title}
-                                </div>
-                                <div className="table-subtitle">
-                                  <span>{p.venue}</span>
-                                  <i />
-                                  {p.authors[0] || '作者未知'}
-                                  {p.authors.length > 1 ? ' et al.' : ''}
-                                  {p.openAccess && <small>OA</small>}
-                                </div>
-                              </td>
-                              <td className="year-cell">
-                                {p.year || '—'}
-                                {i === 0 && sort === 'frontier' && (
-                                  <span className="newest-label">最新</span>
-                                )}
-                              </td>
-                              <td>
-                                <span className={`status-pill ${a.status}`}>
-                                  <span />
-                                  {statusLabels[a.status]}
-                                </span>
-                              </td>
-                              <td>
-                                <span className="heat-value">
-                                  <i
-                                    style={{
-                                      background: heat(a.visits),
-                                      boxShadow: `0 0 0 3px color-mix(in srgb, ${heat(a.visits)} 12%, transparent)`,
-                                    }}
-                                  />
-                                  {a.visits}
-                                  <small>次</small>
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                    />
+                    <div className="detail-host" style={{ width: detailWidth }}>
+                      <Detail
+                        paper={selected!}
+                        annotation={annotation(selected!.id)}
+                        related={related}
+                        onChange={updateAnnotation}
+                        onClose={() => void savePreferences({ detailOpen: false }).catch(notify)}
+                        onSelect={selectPaper}
+                        onError={notify}
+                      />
+                    </div>
+                  </>
                 )}
               </div>
-              <footer className="paper-footer">
-                <span>
-                  显示 {papers.length} / {library.papers.length} 篇
-                </span>
-                <div className="heat-legend">
-                  <span>访问热度</span>
-                  <i />少<span>→</span>多
-                </div>
-              </footer>
-            </main>
-            {showDetail && (
-              <>
-                <div
-                  className="panel-resizer"
-                  role="separator"
-                  aria-label="调整详情面板宽度"
-                  aria-orientation="vertical"
-                  aria-valuenow={detailWidth}
-                  tabIndex={0}
-                  onPointerDown={(e) => {
-                    resize.current = { x: e.clientX, width: detailWidth };
-                    document.body.classList.add('resizing');
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-                      e.preventDefault();
-                      void savePreferences({
-                        detailWidth: detailWidth + (e.key === 'ArrowLeft' ? 20 : -20),
-                      }).catch(notify);
-                    }
-                  }}
-                />
-                <div className="detail-host" style={{ width: detailWidth }}>
-                  <Detail
-                    paper={selected!}
-                    annotation={annotation(selected!.id)}
-                    related={related}
-                    onChange={updateAnnotation}
-                    onClose={() => void savePreferences({ detailOpen: false }).catch(notify)}
-                    onSelect={selectPaper}
-                    onError={notify}
-                  />
-                </div>
-              </>
-            )}
-          </div>
+            </>
+          )}
           <footer className="app-statusbar">
             <span>
               <span className="live-dot" />
               Node 工作区已连接
             </span>
-            <span>本地保存 · 独立预览空间</span>
+            <span>
+              {page === 'research'
+                ? '本地保存 · 独立预览空间'
+                : legacy?.connected
+                  ? '共用原服务 · 原配置保留'
+                  : '等待原工具箱连接'}
+            </span>
             <span className="statusbar-right">
               <Command size={11} /> Ctrl K 检索
             </span>

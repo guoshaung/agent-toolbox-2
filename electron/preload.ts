@@ -6,5 +6,6 @@ const bridge: DesktopBridge = {
   openExternal: (url) => ipcRenderer.invoke('workspace:external', url),
   exportList: (content, name) => ipcRenderer.invoke('workspace:export', content, name),
   version: () => ipcRenderer.invoke('workspace:version'),
+  legacy: (scope, action, payload) => ipcRenderer.invoke('legacy:request', scope, action, payload),
 };
 contextBridge.exposeInMainWorld('toolbox2', bridge);

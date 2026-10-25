@@ -29,6 +29,9 @@ const root = path.resolve(__dirname, '..');
       await delay(250);
     }
     if (!win) throw Error('No application window');
+    win.show();
+    win.focus();
+    await delay(700);
     const evaluate = (code) => win.webContents.executeJavaScript(code);
     assert(
       'native bridge loads a seeded workspace',

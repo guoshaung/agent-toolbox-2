@@ -1,6 +1,6 @@
 {
   "name": "agent-toolbox-2",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Agent Toolbox 2 — a research workspace preview",
@@ -11,10 +11,12 @@
     "build": "tsc --noEmit && vite build && node scripts/build.mjs",
     "start": "npm run build && electron .",
     "dev": "node scripts/dev.mjs",
-    "test": "node scripts/build.mjs && node --test test/backend.test.cjs",
+    "test": "node scripts/build.mjs && node --test test/backend.test.cjs test/bridge.test.cjs",
     "test:ui": "npm run build && electron scripts/smoke.cjs",
     "pack": "npm run build && electron-builder --win dir --x64",
-    "dist:win": "npm run build && electron-builder --win portable --x64"
+    "dist:win": "npm run build && electron-builder --win portable --x64",
+    "test:migration": "npm run build && electron scripts/smoke-migration.cjs",
+    "legacy:prepare": "node scripts/prepare-legacy-bridge.cjs"
   },
   "dependencies": {
     "lucide-react": "1.61.0",
@@ -22,6 +24,7 @@
     "react-dom": "19.3.1"
   },
   "devDependencies": {
+    "@electron/asar": "^3.4.1",
     "@types/node": "^24.0.0",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",

@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, utilityProcess, shell, dialog } from 'elec
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import type { ApiPath } from '../shared/types';
+import { legacyRequest } from './legacy';
 
 app.setName('Agent Toolbox 2 Preview');
 app.setPath(
@@ -80,6 +81,10 @@ ipcMain.handle('workspace:version', (event) => {
   trusted(event);
   return app.getVersion();
 });
+ipcMain.handle('legacy:request', (event, scope, action, payload) => {
+  trusted(event);
+  return legacyRequest(scope, action, payload);
+});
 ipcMain.handle('workspace:external', async (event, value) => {
   trusted(event);
   const url = new URL(String(value));
@@ -138,6 +143,14 @@ else {
       });
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
       window.webContents.on('will-navigate', (event) => event.preventDefault());
+      window.webContents.on('will-frame-navigate', (event) => {
+        if (event.isMainFrame) return;
+        try {
+          const url = new URL(event.url);
+          if (url.origin === 'http://127.0.0.1:43128' && url.pathname === '/') return;
+        } catch {}
+        event.preventDefault();
+      });
       window.once('ready-to-show', () => window?.show());
       if (!app.isPackaged && process.env.VITE_DEV_SERVER_URL === 'http://127.0.0.1:5174')
         await window.loadURL(process.env.VITE_DEV_SERVER_URL);
